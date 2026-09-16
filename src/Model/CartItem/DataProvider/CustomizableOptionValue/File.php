@@ -1,46 +1,38 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link    https://github.com/scandipwa/quote-graphql
  */
+
 declare(strict_types=1);
 
 namespace ScandiPWA\QuoteGraphQl\Model\CartItem\DataProvider\CustomizableOptionValue;
 
 use Magento\Catalog\Model\Product\Option;
 use Magento\Catalog\Model\Product\Option\Type\Text as TextOptionType;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Quote\Model\Quote\Item as QuoteItem;
 use Magento\Quote\Model\Quote\Item\Option as SelectedOption;
-use Magento\QuoteGraphQl\Model\CartItem\DataProvider\CustomizableOptionValueInterface;
 use Magento\QuoteGraphQl\Model\CartItem\DataProvider\CustomizableOptionValue\PriceUnitLabel;
+use Magento\QuoteGraphQl\Model\CartItem\DataProvider\CustomizableOptionValueInterface;
 
-/**
- * @inheritdoc
- */
 class File implements CustomizableOptionValueInterface
 {
-    /**
-     * @var PriceUnitLabel
-     */
-    private $priceUnitLabel;
-
     /**
      * @param PriceUnitLabel $priceUnitLabel
      */
     public function __construct(
-        PriceUnitLabel $priceUnitLabel
-    ) {
-        $this->priceUnitLabel = $priceUnitLabel;
-    }
+        private readonly PriceUnitLabel $priceUnitLabel
+    ) {}
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
+     * @throws LocalizedException
      */
     public function getData(
         QuoteItem $cartItem,

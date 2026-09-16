@@ -1,46 +1,37 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
 
 namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\GraphQl\Config\Element\Field;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthenticationException;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+use Magento\GraphQl\Model\Query\ContextInterface;
+use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Payment as OrderPayment;
+use Magento\Sales\Model\OrderRepository;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactoryInterface;
 use ScandiPWA\QuoteGraphQl\Model\Customer\CheckCustomerAccount;
-use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
-use Magento\Sales\Model\OrderRepository;
 
-/**
- * Orders data resolver
- */
 class ExpandedOrderResolver implements ResolverInterface
 {
-    /**
-     * @var CollectionFactoryInterface
-     */
-    protected $collectionFactory;
-
-    /**
-     * @var CheckCustomerAccount
-     */
-    protected $checkCustomerAccount;
-
-    /**
-     * @var OrderRepository
-     */
-    protected $orderRepository;
+    // one message for "no such order" and "not yours" alike, so order ids cannot be enumerated
+    private const ORDER_NOT_FOUND = 'Order id %1 does not exist.';
 
     /**
      * @param CollectionFactoryInterface $collectionFactory
@@ -48,36 +39,43 @@ class ExpandedOrderResolver implements ResolverInterface
      * @param OrderRepository $orderRepository
      */
     public function __construct(
-        CollectionFactoryInterface $collectionFactory,
-        CheckCustomerAccount $checkCustomerAccount,
-        OrderRepository $orderRepository
-    ) {
-        $this->collectionFactory = $collectionFactory;
-        $this->checkCustomerAccount = $checkCustomerAccount;
-        $this->orderRepository = $orderRepository;
-    }
+        private readonly CollectionFactoryInterface $collectionFactory,
+        private readonly CheckCustomerAccount $checkCustomerAccount,
+        private readonly OrderRepository $orderRepository
+    ) {}
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
+     * @param ContextInterface $context
+     * @throws GraphQlAuthenticationException
+     * @throws GraphQlAuthorizationException
+     * @throws GraphQlNoSuchEntityException
+     * @throws LocalizedException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         $itemsData = [];
         $trackNumbers = [];
 
-        $customerId = $context->getUserId();
+        $customerId = (int)$context->getUserId();
         $this->checkCustomerAccount->execute($customerId, $context->getUserType());
 
-        $orderId = $args['id'];
-        $order = $this->orderRepository->get($orderId);
+        $orderId = (int)$args['id'];
 
-        if ($customerId != $order->getCustomerId()) {
-            throw new GraphQlNoSuchEntityException(__('Customer ID is invalid.'));
+        try {
+            /** @var Order $order */
+            $order = $this->orderRepository->get($orderId);
+        } catch (NoSuchEntityException $e) {
+            throw new GraphQlNoSuchEntityException(__(self::ORDER_NOT_FOUND, $orderId), $e);
+        }
+
+        if ($customerId !== (int)$order->getCustomerId()) {
+            throw new GraphQlNoSuchEntityException(__(self::ORDER_NOT_FOUND, $orderId));
         }
 
         foreach ($order->getAllVisibleItems() as $item) {
@@ -99,6 +97,9 @@ class ExpandedOrderResolver implements ResolverInterface
             'tracking_numbers' => $trackNumbers
         ];
 
+        /** @var OrderPayment $payment */
+        $payment = $order->getPayment();
+
         $base_info = [
             'id' => $order->getId(),
             'increment_id' => $order->getIncrementId(),
@@ -112,9 +113,12 @@ class ExpandedOrderResolver implements ResolverInterface
         ];
 
         return [
+            // Order.order_number is String! on core's shared Order type, so omitting it nulls the query
+            'order_number' => $order->getIncrementId(),
+            'order_id' => $order->getId(),
             'base_order_info' => $base_info,
             'shipping_info' => $shippingInfo,
-            'payment_info' => $order->getPayment()->getData(),
+            'payment_info' => $payment->getData(),
             'products' => $itemsData
         ];
     }

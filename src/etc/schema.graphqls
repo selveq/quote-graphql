@@ -1,29 +1,28 @@
-
-# ScandiPWA - Progressive Web App for Magento
+##
+# ScandiPWA_QuoteGraphQl
 #
-# Copyright © Scandiweb, Inc. All rights reserved.
+# @category    ScandiPWA
+# @package     ScandiPWA_QuoteGraphQl
+# @copyright   Copyright © Magento, Inc. All rights reserved.
+# @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+# @copyright   Modifications © Selveq. All rights reserved.
+# @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
 # See LICENSE for license details.
-#
-# @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
-# @package scandipwa/quote-graphql
-# @link https://github.com/scandipwa/quote-graphql
-#
-# Copyright © Magento, Inc. All rights reserved.
-# See COPYING.txt for license details.
+##
 
 type Query {
-    getPaymentMethods(guestCartId: String): [PaymentMethod] @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetPaymentMethods")
-    getOrderList: OrderList @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\OrderListResolver") @doc(description: "The Sales Order query returns information about a Sales order")
-    getOrderById(id: Int!): Order @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\ExpandedOrderResolver") @doc(description: "The Sales Order query returns information about a Sales order")
-    getBraintreeConfig: Braintree @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\BraintreeResolver")
-    getCartDisplayConfig: CartDisplayConfig @doc(description: "Get cart display settings") @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartDisplayConfigResolver")
-    getStores(search: String, country: String, productsInfo: [ProductInfoInput]): Stores @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetStores")
+    getPaymentMethods(guestCartId: String): [PaymentMethod] @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetPaymentMethods") @cache(cacheable: false)
+    getOrderList: OrderList @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\OrderListResolver") @doc(description: "The Sales Order query returns information about a Sales order") @cache(cacheable: false)
+    getOrderById(id: Int!): Order @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\ExpandedOrderResolver") @doc(description: "The Sales Order query returns information about a Sales order") @cache(cacheable: false)
+    getBraintreeConfig: Braintree @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\BraintreeResolver") @cache(cacheIdentity: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetBraintreeConfig\\Identity")
+    getCartDisplayConfig: CartDisplayConfig @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartDisplayConfigResolver") @doc(description: "Get cart display settings") @cache(cacheIdentity: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetCartDisplayConfig\\Identity")
+    getStores(search: String, country: String, productsInfo: [ProductInfoInput]): Stores @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetStores") @cache(cacheIdentity: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\GetStores\\Identity")
 }
 
 type Mutation {
-    estimateShippingCosts(address: EstimateShippingCostsAddress!, guestCartId: String): [ShippingMethod] @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\EstimateShippingCosts")
-    saveAddressInformation(addressInformation: SaveAddressInformation!, guestCartId: String): PaymentDetails @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\SaveAddressInformation")
-    linkOrder(customer_email: String!): Boolean @resolver(class:"\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\LinkOrder")
+    estimateShippingCosts(address: EstimateShippingCostsAddress!, guestCartId: String): [ShippingMethod] @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\EstimateShippingCosts")
+    saveAddressInformation(addressInformation: SaveAddressInformation!, guestCartId: String): PaymentDetails @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\SaveAddressInformation")
+    linkOrder(customer_email: String!): Boolean @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\LinkOrder")
 }
 
 input ProductOptionInput {
@@ -100,20 +99,7 @@ type Braintree {
     is_three_d_secure: Boolean
 }
 
-type PaymentTotals implements TotalsObject {
-}
-
-type PaymentDetails {
-    payment_methods: [PaymentMethod]
-    totals: PaymentTotals
-}
-
-type PaymentMethod {
-    code: String
-    title: String
-}
-
-interface TotalsObject @typeResolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\TotalsObject") {
+type PaymentTotals {
     shipping_address: OrderCustomerAddress
     applied_rule_ids: String
     items_count: Int
@@ -148,6 +134,16 @@ interface TotalsObject @typeResolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\R
     items: [TotalsItem]
     is_in_store_pickup_available: Boolean
     minimum_order_amount: MinimumOrderAmount
+}
+
+type PaymentDetails {
+    payment_methods: [PaymentMethod]
+    totals: PaymentTotals
+}
+
+type PaymentMethod {
+    code: String
+    title: String
 }
 
 type TotalsItem {
@@ -222,7 +218,7 @@ type Order {
     base_order_info: BaseOrderInfo
     payment_info: PaymentInfo
     shipping_info: ShippingInfo
-    order_products: [ProductInterface] @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\ProductResolver")
+    order_products: [ProductInterface] @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\ProductResolver")
 }
 
 type PaymentInfo {
@@ -343,8 +339,8 @@ input AddressExtensionAttributes {
 #Retrieving a shopping cart via Magento's standard functions extension
 
 type Cart @doc(description: "Contains the contents and other details about a guest or customer cart.") {
-    minimum_order_amount: MinimumOrderAmount @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartMinimumOrderAmount") @doc(description: "Indicates whether the cart contains only virtual products.")
-    is_in_store_pickup_available: Boolean @resolver(class: "\\ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartIsInStorePickupAvailable") @doc(description: "Indicates whether the pickup in store is available.")
+    minimum_order_amount: MinimumOrderAmount @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartMinimumOrderAmount") @doc(description: "Indicates whether the cart contains only virtual products.")
+    is_in_store_pickup_available: Boolean @resolver(class: "ScandiPWA\\QuoteGraphQl\\Model\\Resolver\\CartIsInStorePickupAvailable") @doc(description: "Indicates whether the pickup in store is available.")
 }
 
 type CartPrices @doc(description: "Contains details about the final price of items in the cart, including discount and tax information.") {

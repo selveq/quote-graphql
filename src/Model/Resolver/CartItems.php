@@ -1,13 +1,12 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link    https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
@@ -17,12 +16,12 @@ namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 use Magento\Catalog\Helper\Image as HelperImage;
 use Magento\Framework\App\Area;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlInputException;
 use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
-use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Framework\GraphQl\Query\Uid;
-use Magento\Quote\Api\Data\CartItemInterface;
+use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Item as QuoteItem;
 use Magento\QuoteGraphQl\Model\CartItem\GetItemsData;
@@ -31,42 +30,8 @@ use Magento\Store\Model\App\Emulation;
 use Magento\Store\Model\StoreManagerInterface;
 use ScandiPWA\Performance\Model\Resolver\Products\DataPostProcessor;
 
-/**
- * Class CartItems
- * @package ScandiPWA\QuoteGraphQl\Model\Resolver
- */
 class CartItems extends SourceCartItems
 {
-    /**
-     * @var GetItemsData
-     */
-    protected GetItemsData $getItemsData;
-
-    /**
-     * @var Uid
-     */
-    protected Uid $uidEncoder;
-
-    /**
-     * @var Emulation
-     */
-    protected Emulation $emulation;
-
-    /**
-     * @var HelperImage
-     */
-    protected HelperImage $helperImage;
-
-    /**
-     * @var StoreManagerInterface
-     */
-    protected StoreManagerInterface $storeManager;
-
-    /**
-     * @var DataPostProcessor
-     */
-    protected DataPostProcessor $productPostProcessor;
-
     /**
      * @param GetItemsData $getItemsData
      * @param Uid $uidEncoder
@@ -76,40 +41,30 @@ class CartItems extends SourceCartItems
      * @param DataPostProcessor $productPostProcessor
      */
     public function __construct(
-        GetItemsData $getItemsData,
-        Uid $uidEncoder,
-        Emulation $emulation,
-        HelperImage $helperImage,
-        StoreManagerInterface $storeManager,
-        DataPostProcessor $productPostProcessor
+        private readonly GetItemsData $getItemsData,
+        private readonly Uid $uidEncoder,
+        private readonly Emulation $emulation,
+        private readonly HelperImage $helperImage,
+        private readonly StoreManagerInterface $storeManager,
+        private readonly DataPostProcessor $productPostProcessor
     ) {
         parent::__construct(
             $uidEncoder,
             $getItemsData
         );
-
-        $this->getItemsData = $getItemsData;
-        $this->uidEncoder = $uidEncoder;
-        $this->emulation = $emulation;
-        $this->helperImage = $helperImage;
-        $this->storeManager = $storeManager;
-        $this->productPostProcessor = $productPostProcessor;
     }
 
     /**
-     * @param Field $field
-     * @param ContextInterface $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
-     * @return array
+     * {@inheritdoc}
+     * @throws LocalizedException
+     * @throws NoSuchEntityException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         if (!isset($value['model'])) {
             throw new LocalizedException(__('"model" value should be specified'));
@@ -147,18 +102,17 @@ class CartItems extends SourceCartItems
 
             $productData = array_merge($cartProductsData[$productId],
                 [
-                    'thumbnail' =>
-                        [
-                            'path' => $product->getThumbnail(),
-                            'url' => $this->getImageUrl('thumbnail', $product->getThumbnail(), $product)
-                        ]
+                    'thumbnail' => [
+                        'path' => $product->getThumbnail(),
+                        'url' => $this->getImageUrl('thumbnail', $product->getThumbnail(), $product)
+                    ]
                 ]
             );
 
             $result[] = [
                 'id' => $cartItem->getItemId(),
                 'sku' => $cartItem->getSku(),
-                'uid' => $this->uidEncoder->encode((string) $cartItem->getItemId()),
+                'uid' => $this->uidEncoder->encode((string)$cartItem->getItemId()),
                 'quantity' => $cartItem->getQty(),
                 'product' => $productData,
                 'model' => $cartItem,
@@ -171,23 +125,21 @@ class CartItems extends SourceCartItems
     }
 
     /**
-     * Get product data for cart items
-     *
      * @param Quote $cart
      * @param ResolveInfo $info
      * @return array
      */
     public function getCartProductsData(Quote $cart, ResolveInfo $info): array
     {
-        $cartItems = $cart->getItems();
-        $products = $this->getCartProducts($cartItems);
+        // getItems() serves the data the quote was loaded with, so a just-added item is missing from it
+        $products = $this->getCartProducts($cart->getAllVisibleItems());
         $productsData = [];
 
         $productsPostData = $this->productPostProcessor->process(
             $products,
             'items/product',
             $info,
-            ['isCartProduct'=> true]
+            ['isCartProduct' => true]
         );
 
         foreach ($products as $product) {
@@ -204,7 +156,7 @@ class CartItems extends SourceCartItems
     /**
      * @param string $imageType
      * @param string|null $imagePath
-     * @param Product $product
+     * @param mixed $product
      * @return string
      */
     protected function getImageUrl(
@@ -233,7 +185,7 @@ class CartItems extends SourceCartItems
     }
 
     /**
-     * @param CartItemInterface[] $cartItems
+     * @param QuoteItem[] $cartItems
      * @return array
      */
     private function getCartProducts(array $cartItems): array

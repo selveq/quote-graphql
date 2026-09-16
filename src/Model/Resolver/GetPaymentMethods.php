@@ -1,124 +1,64 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
 
 namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 
-use Magento\Checkout\Model\PaymentDetailsFactory;
-use Magento\Quote\Api\PaymentMethodManagementInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\GraphQl\Config\Element\Field;
-use Magento\Framework\GraphQl\Query\Resolver\ContextInterface;
-use Magento\Framework\GraphQl\Query\Resolver\Value;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+use Magento\GraphQl\Model\Query\ContextInterface;
 use Magento\Quote\Api\Data\PaymentMethodInterface;
-use Magento\Quote\Api\CartTotalRepositoryInterface;
-use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Quote\Model\QuoteIdMask;
+use Magento\Quote\Api\PaymentMethodManagementInterface;
 use Magento\Quote\Model\Webapi\ParamOverriderCartId;
-use Magento\Quote\Model\QuoteIdMaskFactory;
+use Magento\QuoteGraphQl\Model\Cart\GetCartForUser;
 
-/**
- * Class GetPaymentMethods
- *
- * @package ScandiPWA\ServerTime\Model\Resolver
- */
 class GetPaymentMethods implements ResolverInterface
 {
-    /**
-     * Zero Subtotal Checkout payment method
-     */
-    public const FREE_PAYMENT = 'free';
+    // Zero Subtotal Checkout's own method code
+    public const string FREE_PAYMENT = 'free';
 
     /**
-     * @var PaymentDetailsFactory
-     */
-    protected $paymentDetailsFactory;
-
-    /**
-     * @var CartTotalRepositoryInterface
-     */
-    protected $cartTotalsRepository;
-
-    /**
-     * @var PaymentMethodManagementInterface
-     */
-    protected $paymentMethodManagement;
-
-    /**
-     * @var ParamOverriderCartId
-     */
-    protected $overriderCartId;
-
-    /**
-     * @var QuoteIdMaskFactory
-     */
-    protected $quoteIdMaskFactory;
-
-    /**
-     * GetPaymentMethods constructor.
      * @param PaymentMethodManagementInterface $paymentMethodManagement
-     * @param PaymentDetailsFactory $paymentDetailsFactory
-     * @param CartTotalRepositoryInterface $cartTotalsRepository
      * @param ParamOverriderCartId $overriderCartId
-     * @param QuoteIdMaskFactory $quoteIdMaskFactory
+     * @param GetCartForUser $getCartForUser
      */
     public function __construct(
-        PaymentMethodManagementInterface $paymentMethodManagement,
-        PaymentDetailsFactory $paymentDetailsFactory,
-        CartTotalRepositoryInterface $cartTotalsRepository,
-        ParamOverriderCartId $overriderCartId,
-        QuoteIdMaskFactory $quoteIdMaskFactory
-    ) {
-        $this->paymentDetailsFactory = $paymentDetailsFactory;
-        $this->paymentMethodManagement = $paymentMethodManagement;
-        $this->cartTotalsRepository = $cartTotalsRepository;
-        $this->overriderCartId = $overriderCartId;
-        $this->quoteIdMaskFactory = $quoteIdMaskFactory;
-    }
+        private readonly PaymentMethodManagementInterface $paymentMethodManagement,
+        private readonly ParamOverriderCartId $overriderCartId,
+        private readonly GetCartForUser $getCartForUser
+    ) {}
 
     /**
-     * Get payment methods
-     *
-     * @param Field $field
+     * {@inheritdoc}
      * @param ContextInterface $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
-     * @return array|Value|mixed
+     * @throws GraphQlAuthorizationException
+     * @throws GraphQlNoSuchEntityException
      * @throws NoSuchEntityException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
-        if (isset($args['guestCartId'])) {
-            /** @var $quoteIdMask QuoteIdMask */
-            $quoteIdMask = $this->quoteIdMaskFactory->create()->load($args['guestCartId'], 'masked_id');
-            $cartId = $quoteIdMask->getQuoteId();
-        } else {
-            $cartId = $this->overriderCartId->getOverriddenValue();
-        }
+        $cartId = $this->resolveCartId($args, $context);
+        $paymentMethods = $this->paymentMethodManagement->getList($cartId);
 
-        $paymentDetails = $this->paymentDetailsFactory->create();
-        $paymentDetails->setPaymentMethods($this->paymentMethodManagement->getList($cartId));
-        $paymentDetails->setTotals($this->cartTotalsRepository->get($cartId));
-        $paymentMethods = $paymentDetails->getPaymentMethods();
-
-        /** If Zero Subtotal Checkout is available filter out all the other methods and return only Free Payment */
+        // a zero-total order can only be paid the free way, so that method replaces the whole list
         foreach ($paymentMethods as $payment) {
             if ($payment->getCode() === self::FREE_PAYMENT) {
                 return [
@@ -140,5 +80,32 @@ class GetPaymentMethods implements ResolverInterface
             },
             $paymentMethods
         );
+    }
+
+    /**
+     * the same guard core's cart mutations use, so a masked id the caller does not hold is refused before any read
+     * @param array|null $args
+     * @param ContextInterface $context
+     * @return int
+     * @throws GraphQlAuthorizationException
+     * @throws GraphQlNoSuchEntityException
+     * @throws NoSuchEntityException
+     */
+    protected function resolveCartId(?array $args, ContextInterface $context): int
+    {
+        if (isset($args['guestCartId'])) {
+            $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
+
+            return (int)$this->getCartForUser
+                ->execute((string)$args['guestCartId'], $context->getUserId(), $storeId)
+                ->getId();
+        }
+
+        $cartId = $this->overriderCartId->getOverriddenValue();
+        if (!$cartId) {
+            throw new GraphQlAuthorizationException(__('The current customer isn\'t authorized.'));
+        }
+
+        return (int)$cartId;
     }
 }

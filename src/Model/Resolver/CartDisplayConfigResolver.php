@@ -1,80 +1,60 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link    https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
 
 namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\GraphQl\Config\Element\Field;
-use Magento\Framework\GraphQl\Query\Resolver\ContextInterface;
-use Magento\Framework\GraphQl\Query\Resolver\Value;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\Tax\Model\Config;
 use Magento\Store\Model\StoreManagerInterface;
+use Magento\Tax\Model\Config;
 
-class CartDisplayConfigResolver implements ResolverInterface {
-    const DISPLAY_CART_TAX_IN_PRICE_INCL_TAX = 'DISPLAY_CART_TAX_IN_PRICE_INCL_TAX';
-    const DISPLAY_CART_TAX_IN_PRICE_EXL_TAX = 'DISPLAY_CART_TAX_IN_PRICE_EXL_TAX';
-    const DISPLAY_CART_TAX_IN_PRICE_BOTH = 'DISPLAY_CART_TAX_IN_PRICE_BOTH';
+class CartDisplayConfigResolver implements ResolverInterface
+{
+    // the theme switches on these names, so they are the wire and not Magento's numeric display types
+    private const string DISPLAY_CART_TAX_IN_PRICE_INCL_TAX = 'DISPLAY_CART_TAX_IN_PRICE_INCL_TAX';
+    private const string DISPLAY_CART_TAX_IN_PRICE_EXL_TAX = 'DISPLAY_CART_TAX_IN_PRICE_EXL_TAX';
+    private const string DISPLAY_CART_TAX_IN_PRICE_BOTH = 'DISPLAY_CART_TAX_IN_PRICE_BOTH';
 
-    const DISPLAY_CART_TAX_IN_SUBTOTAL_INCL_TAX = 'DISPLAY_CART_TAX_IN_SUBTOTAL_INCL_TAX';
-    const DISPLAY_CART_TAX_IN_SUBTOTAL_EXL_TAX = 'DISPLAY_CART_TAX_IN_SUBTOTAL_EXL_TAX';
-    const DISPLAY_CART_TAX_IN_SUBTOTAL_BOTH = 'DISPLAY_CART_TAX_IN_SUBTOTAL_BOTH';
+    private const string DISPLAY_CART_TAX_IN_SUBTOTAL_INCL_TAX = 'DISPLAY_CART_TAX_IN_SUBTOTAL_INCL_TAX';
+    private const string DISPLAY_CART_TAX_IN_SUBTOTAL_EXL_TAX = 'DISPLAY_CART_TAX_IN_SUBTOTAL_EXL_TAX';
+    private const string DISPLAY_CART_TAX_IN_SUBTOTAL_BOTH = 'DISPLAY_CART_TAX_IN_SUBTOTAL_BOTH';
 
-    const DISPLAY_CART_TAX_IN_SHIPPING_INCL_TAX = 'DISPLAY_CART_TAX_IN_SHIPPING_INCL_TAX';
-    const DISPLAY_CART_TAX_IN_SHIPPING_EXL_TAX = 'DISPLAY_CART_TAX_IN_SHIPPING_EXL_TAX';
-    const DISPLAY_CART_TAX_IN_SHIPPING_BOTH = 'DISPLAY_CART_TAX_IN_SHIPPING_BOTH';
-
-    /**
-     * @var Config
-     */
-    private $config;
+    private const string DISPLAY_CART_TAX_IN_SHIPPING_INCL_TAX = 'DISPLAY_CART_TAX_IN_SHIPPING_INCL_TAX';
+    private const string DISPLAY_CART_TAX_IN_SHIPPING_EXL_TAX = 'DISPLAY_CART_TAX_IN_SHIPPING_EXL_TAX';
+    private const string DISPLAY_CART_TAX_IN_SHIPPING_BOTH = 'DISPLAY_CART_TAX_IN_SHIPPING_BOTH';
 
     /**
-     * @var StoreManagerInterface
-     */
-    protected $storeManager;
-
-    /**
-     * CartDisplayConfigResolver constructor.
      * @param Config $config
      * @param StoreManagerInterface $storeManager
      */
     public function __construct(
-        Config $config,
-        StoreManagerInterface $storeManager
-    )
-    {
-        $this->config = $config;
-        $this->storeManager = $storeManager;
-    }
+        private readonly Config $config,
+        private readonly StoreManagerInterface $storeManager
+    ) {}
 
     /**
-     * @param Field $field
-     * @param ContextInterface $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
-     * @return array|Value|mixed
+     * {@inheritdoc}
+     * @throws NoSuchEntityException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
-    )
-    {
+        ?array $value = null,
+        ?array $args = null
+    ) {
         $store = (int)$this->storeManager->getStore()->getId();
 
         return [
@@ -121,6 +101,10 @@ class CartDisplayConfigResolver implements ResolverInterface {
         return $result;
     }
 
+    /**
+     * @param int $store
+     * @return string
+     */
     private function getDisplayTaxInShippingAmountValue(int $store)
     {
         $result = self::DISPLAY_CART_TAX_IN_SHIPPING_BOTH;
@@ -134,16 +118,28 @@ class CartDisplayConfigResolver implements ResolverInterface {
         return $result;
     }
 
+    /**
+     * @param int $store
+     * @return bool
+     */
     private function getIncludeTaxInOrderTotalValue(int $store)
     {
         return $this->config->displayCartTaxWithGrandTotal($store);
     }
 
+    /**
+     * @param int $store
+     * @return bool
+     */
     private function getDisplayFullTaxSummaryValue(int $store)
     {
         return $this->config->displayCartFullSummary($store);
     }
 
+    /**
+     * @param int $store
+     * @return bool
+     */
     private function getDisplayZeroTaxSubtotalValue(int $store)
     {
         return $this->config->displayCartZeroTax($store);

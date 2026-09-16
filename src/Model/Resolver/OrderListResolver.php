@@ -1,61 +1,57 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
 
 namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\GraphQl\Config\Element\Field;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthenticationException;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+use Magento\GraphQl\Model\Query\ContextInterface;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactoryInterface;
+use Magento\Sales\Model\ResourceModel\Order\Shipment\Track\CollectionFactory as TrackCollectionFactory;
 use ScandiPWA\QuoteGraphQl\Model\Customer\CheckCustomerAccount;
 
-/**
- * Orders data reslover
- */
 class OrderListResolver implements ResolverInterface
 {
     /**
-     * @var CollectionFactoryInterface
-     */
-    protected CollectionFactoryInterface $collectionFactory;
-
-    /**
-     * @var CheckCustomerAccount
-     */
-    protected CheckCustomerAccount $checkCustomerAccount;
-
-    /**
      * @param CollectionFactoryInterface $collectionFactory
      * @param CheckCustomerAccount $checkCustomerAccount
+     * @param TrackCollectionFactory $trackCollectionFactory
      */
     public function __construct(
-        CollectionFactoryInterface $collectionFactory,
-        CheckCustomerAccount $checkCustomerAccount
-    ) {
-        $this->collectionFactory = $collectionFactory;
-        $this->checkCustomerAccount = $checkCustomerAccount;
-    }
+        private readonly CollectionFactoryInterface $collectionFactory,
+        private readonly CheckCustomerAccount $checkCustomerAccount,
+        private readonly TrackCollectionFactory $trackCollectionFactory
+    ) {}
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
+     * @param ContextInterface $context
+     * @throws GraphQlAuthenticationException
+     * @throws GraphQlAuthorizationException
+     * @throws GraphQlNoSuchEntityException
+     * @throws LocalizedException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         $items = [];
 
@@ -65,20 +61,20 @@ class OrderListResolver implements ResolverInterface
 
         $orders = $this->collectionFactory->create($customerId);
 
+        $orderIds = [];
         foreach ($orders as $order) {
-            $trackNumbers = [];
-            $tracksCollection = $order->getTracksCollection();
+            $orderIds[] = (int)$order->getId();
+        }
 
-            foreach ($tracksCollection->getItems() as $track) {
-                $trackNumbers[] = $track->getTrackNumber();
-            }
+        $trackNumbers = $this->getTrackNumbersByOrder($orderIds);
 
+        foreach ($orders as $order) {
             $shippingInfo = [
                 'shipping_amount' => $order->getShippingAmount(),
                 'shipping_method' => $order->getShippingMethod(),
                 'shipping_address' => $order->getShippingAddress(),
                 'shipping_description' => $order->getShippingDescription(),
-                'tracking_numbers' => $trackNumbers
+                'tracking_numbers' => $trackNumbers[(int)$order->getId()] ?? []
             ];
 
             $base_info = [
@@ -94,6 +90,9 @@ class OrderListResolver implements ResolverInterface
             ];
 
             $items[] = [
+                // Order.order_number is String! on core's shared Order type, so omitting it nulls the query
+                'order_number' => $order->getIncrementId(),
+                'order_id' => $order->getId(),
                 'base_order_info' => $base_info,
                 'shipping_info' => $shippingInfo,
                 'payment_info' => $order->getPayment()->getData()
@@ -101,5 +100,26 @@ class OrderListResolver implements ResolverInterface
         }
 
         return ['items' => $items];
+    }
+
+    /**
+     * one collection for the whole list: asking each order for its own tracks costs a query per order
+     * @param int[] $orderIds
+     * @return array
+     */
+    protected function getTrackNumbersByOrder(array $orderIds): array
+    {
+        if (!$orderIds) {
+            return [];
+        }
+
+        $trackNumbers = [];
+        $tracks = $this->trackCollectionFactory->create()->addFieldToFilter('order_id', ['in' => $orderIds]);
+
+        foreach ($tracks as $track) {
+            $trackNumbers[(int)$track->getOrderId()][] = $track->getTrackNumber();
+        }
+
+        return $trackNumbers;
     }
 }

@@ -1,13 +1,12 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link https://github.com/scandipwa/quote-graphql
  */
 
 declare(strict_types=1);
@@ -17,108 +16,65 @@ namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 use Exception;
 use Magento\Checkout\Api\Data\ShippingInformationInterface;
 use Magento\Checkout\Api\Data\ShippingInformationInterfaceFactory;
-use Magento\Checkout\Api\GuestShippingInformationManagementInterface;
 use Magento\Checkout\Api\ShippingInformationManagementInterface;
+use Magento\Framework\Exception\InputException;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Exception\StateException;
 use Magento\Framework\GraphQl\Config\Element\Field;
-use Magento\Framework\GraphQl\Query\Resolver\ContextInterface;
-use Magento\Framework\GraphQl\Query\Resolver\Value;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\Checkout\Model\ShippingInformationManagement;
+use Magento\GraphQl\Model\Query\ContextInterface;
 use Magento\InventoryInStorePickupApi\Api\Data\PickupLocationInterface;
 use Magento\Quote\Api\Data\AddressExtensionInterfaceFactory;
-use Magento\Quote\Model\Webapi\ParamOverriderCartId;
 use Magento\Quote\Api\Data\AddressInterfaceFactory;
-use \Magento\Quote\Api\Data\PaymentMethodInterface;
-use \Magento\Quote\Api\Data\TotalsItemInterface;
+use Magento\Quote\Api\Data\PaymentMethodInterface;
+use Magento\Quote\Api\Data\TotalsItemInterface;
+use Magento\Quote\Model\Cart\Totals;
+use Magento\Quote\Model\Webapi\ParamOverriderCartId;
+use Magento\QuoteGraphQl\Model\Cart\GetCartForUser;
+use ScandiPWA\QuoteGraphQl\Model\Cart\AddressInputValidator;
 
-/**
- * Class SaveAddressInformation
- * @package ScandiPWA\QuoteGraphQl\Model\Resolver
- */
-class SaveAddressInformation implements ResolverInterface {
-    /**
-     * @var ShippingInformationManagement
-     */
-    protected $shippingInformationManagement;
+class SaveAddressInformation implements ResolverInterface
+{
+    // core keeps this one private, on Carrier\InStorePickup, so the fork carries its own copy
+    protected const string PICKUP_METHOD_CODE  = 'pickup';
 
-    /**
-     * @var ShippingInformationInterfaceFactory
-     */
-    protected $shippingInformation;
+    // Zero Subtotal Checkout's own method code
+    protected const string FREE_PAYMENT = 'free';
 
     /**
-     * @var ParamOverriderCartId
-     */
-    protected $overriderCartId;
-
-    /**
-     * @var GuestShippingInformationManagementInterface
-     */
-    protected $guestShippingInformationManagement;
-
-    /**
-     * @var AddressInterfaceFactory
-     */
-    protected $addressInterfaceFactory;
-
-    /**
-     * @var AddressExtensionInterfaceFactory
-     */
-    protected $addressExtensionInterfaceFactory;
-
-    /**
-     * Pick up in store method code (In magento original class it's private)
-     */
-    protected const PICKUP_METHOD_CODE  = 'pickup';
-
-    /**
-     * Zero Subtotal Checkout payment method
-     */
-    protected const FREE_PAYMENT = 'free';
-
-    /**
-     * SaveAddressInformation constructor.
      * @param ShippingInformationManagementInterface $shippingInformationManagement
-     * @param GuestShippingInformationManagementInterface $guestShippingInformationManagement
      * @param ShippingInformationInterfaceFactory $shippingInformation
      * @param ParamOverriderCartId $overriderCartId
      * @param AddressInterfaceFactory $addressInterfaceFactory
      * @param AddressExtensionInterfaceFactory $addressExtensionInterfaceFactory
+     * @param GetCartForUser $getCartForUser
+     * @param AddressInputValidator $addressInputValidator
      */
     public function __construct(
-        ShippingInformationManagementInterface $shippingInformationManagement,
-        GuestShippingInformationManagementInterface $guestShippingInformationManagement,
-        ShippingInformationInterfaceFactory $shippingInformation,
-        ParamOverriderCartId $overriderCartId,
-        AddressInterfaceFactory $addressInterfaceFactory,
-        AddressExtensionInterfaceFactory $addressExtensionInterfaceFactory
-    ) {
-        $this->shippingInformation = $shippingInformation;
-        $this->overriderCartId = $overriderCartId;
-        $this->shippingInformationManagement = $shippingInformationManagement;
-        $this->guestShippingInformationManagement = $guestShippingInformationManagement;
-        $this->addressInterfaceFactory = $addressInterfaceFactory;
-        $this->addressExtensionInterfaceFactory = $addressExtensionInterfaceFactory;
-    }
+        private readonly ShippingInformationManagementInterface $shippingInformationManagement,
+        private readonly ShippingInformationInterfaceFactory $shippingInformation,
+        private readonly ParamOverriderCartId $overriderCartId,
+        private readonly AddressInterfaceFactory $addressInterfaceFactory,
+        private readonly AddressExtensionInterfaceFactory $addressExtensionInterfaceFactory,
+        private readonly GetCartForUser $getCartForUser,
+        private readonly AddressInputValidator $addressInputValidator
+    ) {}
 
     /**
-     * Fetches the data from persistence models and format it according to the GraphQL schema.
-     *
-     * @param Field $field
+     * {@inheritdoc}
      * @param ContextInterface $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
      * @throws Exception
-     * @return mixed|Value
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         $requestAddressInformation = $args['addressInformation'];
 
@@ -129,8 +85,13 @@ class SaveAddressInformation implements ResolverInterface {
             ShippingInformationInterface::SHIPPING_METHOD_CODE => $shippingMethodCode
         ] = $requestAddressInformation;
 
-        $shippingAddressObject = $this->addressInterfaceFactory->create([ 'data' => $shippingAddress ]);
-        $billingAddressObject = $this->addressInterfaceFactory->create([ 'data' => $billingAddress ]);
+        $this->addressInputValidator->validate($shippingAddress, 'shipping');
+        $this->addressInputValidator->validate($billingAddress, 'billing');
+
+        $cartId = $this->resolveCartId($args, $context);
+
+        $shippingAddressObject = $this->addressInterfaceFactory->create(['data' => $shippingAddress]);
+        $billingAddressObject = $this->addressInterfaceFactory->create(['data' => $billingAddress]);
 
         if ($shippingMethodCode === self::PICKUP_METHOD_CODE && isset($shippingAddress['extension_attributes'])) {
             foreach ($shippingAddress['extension_attributes'] as $attribute) {
@@ -153,31 +114,36 @@ class SaveAddressInformation implements ResolverInterface {
             ]
         ]);
 
-        if (isset($args['guestCartId'])) {
-            // At this point we assume this is guest cart
-            return $this->requestPaymentMethods($addressInformation, $args['guestCartId']);
-        }
-
-        return $this->requestPaymentMethods($addressInformation);
+        return $this->requestPaymentMethods($addressInformation, $cartId);
     }
 
-    protected function requestPaymentMethods($addressInformation, $guestCartId = null): array
+    /**
+     * @param ShippingInformationInterface $addressInformation
+     * @param int $cartId
+     * @return array
+     * @throws GraphQlInputException
+     * @throws GraphQlNoSuchEntityException
+     */
+    protected function requestPaymentMethods(ShippingInformationInterface $addressInformation, int $cartId): array
     {
-        $rawPaymentInformation = $guestCartId
-            ? $this->guestShippingInformationManagement->saveAddressInformation($guestCartId, $addressInformation)
-            : $this->shippingInformationManagement->saveAddressInformation(
-                $this->overriderCartId->getOverriddenValue(),
-                $addressInformation
-            );
+        try {
+            $rawPaymentInformation = $this->shippingInformationManagement
+                ->saveAddressInformation($cartId, $addressInformation);
+        } catch (NoSuchEntityException $e) {
+            // core reports a missing carrier or shipping method here, which is the caller's input to fix
+            throw new GraphQlNoSuchEntityException(__($e->getMessage()), $e);
+        } catch (InputException | StateException $e) {
+            throw new GraphQlInputException(__($e->getMessage()), $e);
+        }
 
+        /** @var Totals $rawTotals */
         $rawTotals = $rawPaymentInformation->getTotals();
 
-        // The following crutch exists because of Magento not being able to fix an issue for four years
-        // Link to the issue: https://github.com/magento/magento2/issues/7769
+        // grand_total on the totals object is stale, so it is taken from the segments: magento/magento2#7769
         $rawTotals->setGrandTotal($rawTotals->getTotalSegments()['grand_total']['value']);
         $totals = array_merge(
             $rawTotals->getData(),
-            [ 'items' => array_map(function ($item) {
+            ['items' => array_map(function ($item) {
                 /** @var TotalsItemInterface $item */
                 return [
                     TotalsItemInterface::KEY_ITEM_ID => $item->getItemId(),
@@ -202,12 +168,12 @@ class SaveAddressInformation implements ResolverInterface {
                     TotalsItemInterface::KEY_WEEE_TAX_APPLIED => $item->getWeeeTaxApplied(),
                     TotalsItemInterface::KEY_NAME => $item->getName(),
                 ];
-            }, $rawTotals->getItems()) ]
+            }, $rawTotals->getItems())]
         );
 
         $paymentMethods = $rawPaymentInformation->getPaymentMethods();
 
-        /** If Zero Subtotal Checkout is available filter out all the other methods and return only Free Payment */
+        // a zero-total order can only be paid the free way, so that method replaces the whole list
         foreach ($paymentMethods as $payment) {
             if ($payment->getCode() === self::FREE_PAYMENT) {
                 return [
@@ -231,9 +197,36 @@ class SaveAddressInformation implements ResolverInterface {
                         'title' => $payment->getTitle(),
                     ];
                 },
-                $rawPaymentInformation->getPaymentMethods()
+                $paymentMethods
             ),
             'totals' => $totals
         ];
+    }
+
+    /**
+     * the same guard core's cart mutations use, so a masked id the caller does not hold is refused before any write
+     * @param array|null $args
+     * @param ContextInterface $context
+     * @return int
+     * @throws GraphQlAuthorizationException
+     * @throws GraphQlNoSuchEntityException
+     * @throws NoSuchEntityException
+     */
+    protected function resolveCartId(?array $args, ContextInterface $context): int
+    {
+        if (isset($args['guestCartId'])) {
+            $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
+
+            return (int)$this->getCartForUser
+                ->execute((string)$args['guestCartId'], $context->getUserId(), $storeId)
+                ->getId();
+        }
+
+        $cartId = $this->overriderCartId->getOverriddenValue();
+        if (!$cartId) {
+            throw new GraphQlAuthorizationException(__('The current customer isn\'t authorized.'));
+        }
+
+        return (int)$cartId;
     }
 }

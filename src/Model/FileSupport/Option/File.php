@@ -1,33 +1,31 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright 2013 Adobe. All Rights Reserved.
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link    https://github.com/scandipwa/quote-graphql
  */
 
 namespace ScandiPWA\QuoteGraphQl\Model\FileSupport\Option;
 
-use Magento\Catalog\Model\Product\Exception as ProductException;
 use Magento\Catalog\Helper\Product as ProductHelper;
-use Magento\Framework\App\Filesystem\DirectoryList;
-use Magento\Framework\Filesystem;
-use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\Serialize\Serializer\Json;
-use Magento\Framework\App\ObjectManager;
 use Magento\Catalog\Model\Product\Option\Type\File as SourceFile;
+use Magento\Catalog\Model\Product\Option\Type\File\ValidatorFile;
+use Magento\Catalog\Model\Product\Option\Type\File\ValidatorInfo;
+use Magento\Catalog\Model\Product\Option\UrlBuilder;
 use Magento\Checkout\Model\Session;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Quote\Model\Quote\Item\OptionFactory;
-use Magento\MediaStorage\Helper\File\Storage\Database;
-use Magento\Catalog\Model\Product\Option\UrlBuilder;
+use Magento\Framework\App\ObjectManager;
 use Magento\Framework\Escaper;
-use Magento\Catalog\Model\Product\Option\Type\File\ValidatorInfo;
-use Magento\Catalog\Model\Product\Option\Type\File\ValidatorFile;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Filesystem;
+use Magento\Framework\Serialize\Serializer\Json;
+use Magento\MediaStorage\Helper\File\Storage\Database;
+use Magento\Quote\Model\Quote\Item\OptionFactory;
 
 class File extends SourceFile
 {
@@ -36,6 +34,20 @@ class File extends SourceFile
      */
     protected $serializer;
 
+    /**
+     * @param Session $checkoutSession
+     * @param ScopeConfigInterface $scopeConfig
+     * @param OptionFactory $itemOptionFactory
+     * @param Database $coreFileStorageDatabase
+     * @param ValidatorInfo $validatorInfo
+     * @param ValidatorFile $validatorFile
+     * @param UrlBuilder $urlBuilder
+     * @param Escaper $escaper
+     * @param array $data
+     * @param Filesystem|null $filesystem
+     * @param Json|null $serializer
+     * @param ProductHelper|null $productHelper
+     */
     public function __construct(
         Session $checkoutSession,
         ScopeConfigInterface $scopeConfig,
@@ -46,9 +58,9 @@ class File extends SourceFile
         UrlBuilder $urlBuilder,
         Escaper $escaper,
         array $data = [],
-        Filesystem $filesystem = null,
-        Json $serializer = null,
-        ProductHelper $productHelper = null
+        ?Filesystem $filesystem = null,
+        ?Json $serializer = null,
+        ?ProductHelper $productHelper = null
     ) {
         parent::__construct(
             $checkoutSession,
@@ -69,9 +81,8 @@ class File extends SourceFile
     }
 
     /**
-     * Prepare option value for cart
-     *
-     * @return string|null Prepared option value
+     * {@inheritdoc}
+     * @throws LocalizedException
      */
     public function prepareForCart()
     {
@@ -79,23 +90,18 @@ class File extends SourceFile
         $optionId = $option->getId();
         $buyRequest = $this->getRequest();
 
-        // Prepare value and fill buyRequest with option
         $requestOptions = $buyRequest->getOptions();
 
         if ($this->getIsValid() && $this->getUserValue() !== null) {
             $value = $this->getUserValue();
 
-            // Save option in request, because we have no $_FILES['options']
+            // $_FILES['options'] does not exist on this path, so the value travels in the buy request
             $requestOptions[$this->getOption()->getId()] = $value;
             $result = $this->serializer->serialize($value);
         } else if ($this->getIsValid() && isset($requestOptions[$this->getOption()->getId()])) {
             $result = $this->serializer->serialize($requestOptions[$this->getOption()->getId()]);
         } else {
-            /*
-             * Clear option info from request, so it won't be stored in our db upon
-             * unsuccessful validation. Otherwise some bad file data can happen in buyRequest
-             * and be used later in reorders and reconfigurations.
-             */
+            // dropping it stops bad file data reaching later reorders and reconfigurations through buyRequest
             if (is_array($requestOptions)) {
                 unset($requestOptions[$this->getOption()->getId()]);
             }
@@ -103,7 +109,6 @@ class File extends SourceFile
         }
         $buyRequest->setOptions($requestOptions);
 
-        // Clear action key from buy request - we won't need it anymore
         $optionActionKey = 'options_' . $optionId . '_file_action';
         $buyRequest->unsetData($optionActionKey);
 

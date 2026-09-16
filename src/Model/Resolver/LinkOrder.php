@@ -1,95 +1,65 @@
 <?php
 
+/**
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
+ * See LICENSE for license details.
+ */
+
 namespace ScandiPWA\QuoteGraphQl\Model\Resolver;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\Data\CustomerInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\GraphQl\Config\Element\Field;
-use Magento\Framework\GraphQl\Query\Resolver\ContextInterface;
-use Magento\Framework\GraphQl\Query\Resolver\Value;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\Quote\Api\Data\PaymentMethodInterface;
-use Magento\Quote\Model\QuoteIdMask;
-use Magento\Checkout\Model\Session as CheckoutSession;
-use Magento\Sales\Model\Order;
-use Magento\Store\Model\StoreManagerInterface;
-use Magento\Customer\Model\Customer;
+use Magento\GraphQl\Model\Query\ContextInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Magento\Customer\Model\CustomerFactory;
+use Magento\Sales\Model\Order;
 
-/**
- * Class LinkOrder
- * @package ScandiPWA\QuoteGraphQl\Model\Resolver
- */
 class LinkOrder implements ResolverInterface
 {
     /**
-     * @var OrderRepositoryInterface
-     */
-    protected $orderRepository;
-
-    /**
-     * @var CheckoutSession
-     */
-    protected $checkoutSession;
-
-    /**
-     * @var StoreManagerInterface
-     */
-    protected $storeManager;
-
-    /**
-     * @var CustomerFactory
-     */
-    protected $customerFactory;
-
-    /**
-     * LinkOrder constructor.
      * @param OrderRepositoryInterface $orderRepository
      * @param CheckoutSession $checkoutSession
-     * @param StoreManagerInterface $storeManager
+     * @param CustomerRepositoryInterface $customerRepository
      */
     public function __construct(
-        OrderRepositoryInterface $orderRepository,
-        CheckoutSession $checkoutSession,
-        StoreManagerInterface $storeManager,
-        CustomerFactory $customerFactory
-    ) {
-        $this->orderRepository = $orderRepository;
-        $this->checkoutSession = $checkoutSession;
-        $this->storeManager = $storeManager;
-        $this->customerFactory = $customerFactory;
-    }
+        private readonly OrderRepositoryInterface $orderRepository,
+        private readonly CheckoutSession $checkoutSession,
+        private readonly CustomerRepositoryInterface $customerRepository
+    ) {}
 
     /**
-     * Get payment methods
-     *
-     * @param Field $field
+     * link the session's guest order to the signed-in customer
+     * {@inheritdoc}
      * @param ContextInterface $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
-     * @return array|Value|mixed
+     * @throws GraphQlAuthorizationException
+     * @throws LocalizedException
      * @throws NoSuchEntityException
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
-        if (!isset($args['customer_email'])) {
-            return false;
+        $customer = $this->getSignedInCustomer($context);
+
+        // an order may only be linked to the account making the call, whatever address the mutation names
+        if (strcasecmp((string)($args['customer_email'] ?? ''), (string)$customer->getEmail()) !== 0) {
+            throw new GraphQlAuthorizationException(
+                __('An order can only be linked to the email address of the signed-in customer.')
+            );
         }
 
-        $customerEmail = $args['customer_email'];
-        $customer = $this->getCustomerByEmail($customerEmail);
-        if (!$customer->getId()) {
-            return false;
-        }
-
-        // Loads last order from session
         $order = $this->checkoutSession->getLastRealOrder();
 
         if (!$this->validateOrder($order, $customer)) {
@@ -105,17 +75,16 @@ class LinkOrder implements ResolverInterface
 
     /**
      * @param Order $order
-     * @param Customer $custumer
+     * @param CustomerInterface $customer
      * @return bool
      */
-    public function validateOrder($order, $custumer) : bool {
-        // If order is un-siggned
+    public function validateOrder($order, $customer): bool
+    {
         if (!$order->getId() || $order->getCustomerId()) {
             return false;
         }
 
-        // If order was placed in same store
-        if ($order->getStoreId() !== $custumer->getStoreId()) {
+        if ((int)$order->getStoreId() !== (int)$customer->getStoreId()) {
             return false;
         }
 
@@ -123,15 +92,20 @@ class LinkOrder implements ResolverInterface
     }
 
     /**
-     * @param $email
-     * @return Customer
+     * @param ContextInterface $context
+     * @return CustomerInterface
+     * @throws GraphQlAuthorizationException
+     * @throws LocalizedException
      * @throws NoSuchEntityException
      */
-    public function getCustomerByEmail($email)
+    protected function getSignedInCustomer(ContextInterface $context): CustomerInterface
     {
-        $websiteID = $this->storeManager->getStore()->getWebsiteId();
-        $customer = $this->customerFactory->create()->setWebsiteId($websiteID)->loadByEmail($email);
+        $customerId = (int)$context->getUserId();
 
-        return $customer;
+        if (!$customerId) {
+            throw new GraphQlAuthorizationException(__('The current customer isn\'t authorized.'));
+        }
+
+        return $this->customerRepository->getById($customerId);
     }
 }

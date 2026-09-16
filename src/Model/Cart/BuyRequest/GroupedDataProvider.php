@@ -1,13 +1,12 @@
 <?php
+
 /**
- * ScandiPWA - Progressive Web App for Magento
- *
- * Copyright © Scandiweb, Inc. All rights reserved.
+ * @category    ScandiPWA
+ * @package     ScandiPWA_QuoteGraphQl
+ * @copyright   Copyright © Scandiweb, Inc. All rights reserved.
+ * @copyright   Modifications © Selveq. All rights reserved.
+ * @license     OSL-3.0 (Open Software License ("OSL") v. 3.0)
  * See LICENSE for license details.
- *
- * @license OSL-3.0 (Open Software License ("OSL") v. 3.0)
- * @package scandipwa/quote-graphql
- * @link    https://github.com/scandipwa/quote-graphql
  */
 
 namespace ScandiPWA\QuoteGraphQl\Model\Cart\BuyRequest;
@@ -16,11 +15,11 @@ use Magento\Quote\Model\Cart\Data\CartItem;
 
 class GroupedDataProvider
 {
-    private const OPTION_TYPE = 'grouped';
+    private const string OPTION_TYPE = 'grouped';
 
     /**
-     * @inheritdoc
-     *
+     * @param CartItem $cartItem
+     * @return array|array[]
      * @phpcs:disable Magento2.Functions.DiscouragedFunction
      */
     public function execute(CartItem $cartItem): array
@@ -43,16 +42,11 @@ class GroupedDataProvider
             return $groupedData;
         }
 
-        $result = ['super_group' => $groupedData];
-
-        return $result;
+        return ['super_group' => $groupedData];
     }
 
     /**
-     * Checks whether this provider is applicable for the current option
-     *
      * @param array $optionData
-     *
      * @return bool
      */
     private function isProviderApplicable(array $optionData): bool
