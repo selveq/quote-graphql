@@ -28,7 +28,8 @@ class Quote extends SourceQuote
     {
         parent::beforeSave();
 
-        $customerIsGuest = !$this->_customer || $this->getCustomerId() == null;
+        // customer_id alone decides: $_customer is only set once getCustomer() ran, so a registered quote saved earlier read as a guest
+        $customerIsGuest = $this->getCustomerId() == null;
         $this->setCustomerIsGuest($customerIsGuest);
 
         return $this;

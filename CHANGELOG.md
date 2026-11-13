@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.0.1
+
+- A quote keeps `customer_is_guest` false for a signed-in customer. The flag is computed from `customer_id` alone, where it previously also read `$_customer`, which is only populated once `getCustomer()` has run.
+
 ## 4.0.0
 
 Forked from `scandipwa/quote-graphql` 3.1.0. Module name and namespace are unchanged, and the package replaces `scandipwa/quote-graphql` at every version, so it installs as a drop-in replacement.

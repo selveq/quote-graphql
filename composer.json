@@ -2,7 +2,7 @@
     "name": "selveq/quote-graphql",
     "description": "Magento 2 Quote GraphQl extension for ScandiPWA theme",
     "type": "magento2-module",
-    "version": "4.0.0",
+    "version": "4.0.1",
     "license": [
         "OSL-3.0"
     ],
